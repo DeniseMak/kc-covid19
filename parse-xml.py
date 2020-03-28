@@ -38,6 +38,23 @@ num_total_cases.reverse()
 dates.reverse()
 plt.plot(num_new_cases, label="new cases")
 plt.plot(num_total_cases, label="total cases")
+
+def sum_to_14_days_ago(i, list):
+    s = 0
+    if i > 14:
+        s= sum(list[:i-14])
+    return s
+
+def num_recovered_cases(list):
+    # add up the cases per day (new cases) from beginning until current index
+    num_recovered = [sum_to_14_days_ago(i, list) for i in range(len(list))]
+    return num_recovered
+
+num_recovered = num_recovered_cases(num_new_cases)
+print(num_recovered)
+num_total_minus_recovered = [num_total_cases[i] - num_recovered[i] for i in range(len(num_total_cases))]
+
+plt.plot(num_total_minus_recovered, 'g--', label="total minus estimated recovered")
 plt.xticks(np.arange(len(num_total_cases)), dates, rotation=90)
 plt.legend()
 plt.title("King County COVID-19 cases")
