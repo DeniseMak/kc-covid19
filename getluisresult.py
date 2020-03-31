@@ -1,4 +1,4 @@
-########### Python 3.2 #############
+########### Python 3.7 #############
 import http.client, urllib.request, urllib.parse, urllib.error, base64, json, requests, time
 
 with open('luis-config.txt', 'r') as config:
@@ -11,16 +11,22 @@ headers = {
     # Request headers
     'Ocp-Apim-Subscription-Key': key,
 }
-# query = "Staying home is vitally important to King County’s ability to slow the spread of COVID-19 illnesses. Public Health announced 130 new cases today, bringing the official case count in King County to 1170. In addition, twelve new deaths are reported, bringing the total of confirmed deaths in King County to 87. A new local system launched to learn how COVID-19 virus is spreading."
+# query = "King County hospitals are seeing significant pressures as the number of COVID-19 cases increase. " \
+#         "Public Health estimates 82 new cases of COVID-19 today, bringing the estimated case count in King County to 2159. " \
+#         "In addition, five new deaths are reported, bringing the estimated total of deaths in King County to 141."
 
 def resolve_number(entities, expr):
     for entity in entities:
         if entity['entity'] == expr:
             return entity['resolution']['value']
 
-def getcaseinfo(result):
+def getcaseinfo(result, print_summary=True):
     summary = ''
     caseinfo = {}
+    hasnewcases = False
+    hastotalcases = False
+    hasnewdeaths = False
+    hastotaldeaths = False
     if 'compositeEntities' in result:
         for expr in result['compositeEntities']:
             summary += expr['value'] + ", "
@@ -29,16 +35,29 @@ def getcaseinfo(result):
                     #caseinfo['new-cases']=expr['children'][0]['value'] #assume it's the first number in the expression
                     value_expr = expr['children'][0]['value']
                     caseinfo['new-cases'] = resolve_number(result['entities'], value_expr)
+                    hasnewcases = True
             if expr['parentType'] == 'total-case-expression':
                 if 'children' in expr and expr['children'][0]['type']=='builtin.number':
                     #caseinfo['total-cases']=expr['children'][0]['value'] #assume it's the first number in the expression
                     value_expr = expr['children'][0]['value']
                     caseinfo['total-cases'] = resolve_number(result['entities'], value_expr)
-
+                    hastotalcases   = True
+            if expr['parentType'] == 'new-death-expression':
+                if 'children' in expr and expr['children'][0]['type']=='builtin.number':
+                    value_expr = expr['children'][0]['value']
+                    caseinfo['new-deaths'] = resolve_number(result['entities'], value_expr)
+                    hasnewdeaths = True
+            if expr['parentType'] == 'total-death-expression':
+                if 'children' in expr and expr['children'][0]['type']=='builtin.number':
+                    value_expr = expr['children'][0]['value']
+                    caseinfo['total-deaths'] = resolve_number(result['entities'], value_expr)
+                    hastotaldeaths = True
     if 'topScoringIntent' in result:
         if result['topScoringIntent']['intent'] == 'None':
             caseinfo['isNone'] = True
     caseinfo['summary'] = summary
+    if print_summary:
+        print(summary)
     return caseinfo
 
 
@@ -77,7 +96,7 @@ def getluisresult(query):
                 # return summary
             else:
                 # wait a second
-                print("\tStaus 429: Retrying...")
+                print("\tStatus 429: Retrying...")
                 time.sleep(2)
 
             # print(summary)
@@ -86,5 +105,5 @@ def getluisresult(query):
             print("[Exception {}] ".format(type(e)))#.format(e.args))
 
 
-# getluisresult(query)
+#getluisresult(query)
 ####################################
