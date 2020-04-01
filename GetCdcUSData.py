@@ -1,10 +1,10 @@
-import CdcCsv
 import datetime
 import json
 import requests
 import urllib.request
 import time
 from bs4 import BeautifulSoup
+from CsvAccess import CdcCsv
 from StateAbbrev import *
 
 debug = False

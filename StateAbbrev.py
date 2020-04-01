@@ -40,6 +40,7 @@ state_to_abbrev = {
     'North Carolina': 'NC',
     'North Dakota': 'ND',
     'Northern Marianas':'MP',
+    'Northern Mariana Islands':'MP', # reverse map will use this, the last one
     'Ohio': 'OH',
     'Oklahoma': 'OK',
     'Oregon': 'OR',
