@@ -1,106 +1,132 @@
 ## Note: currently skips plotting a point for dates that don't have new cases
-import feedparser
+from collections import namedtuple
+from CsvAccess import KCCsv
+from datetime import date
+from datetime import datetime
 import dateutil.parser
+import feedparser
 import getluisresult
-import matplotlib.pyplot as plt
-import numpy as np
 import time
 
-show_output = True
+show_output = False
+
+# By default we collect only what is missing in the csv file. 
+# Set to True to collect everything
+collect_all = True
+
+# 3/1 has 2 entries indicating deaths, which we don't expect, so start
+# on 3/2
 start_month = 3
-start_date = 1
+start_day = 2
+start_date = date(2020, start_month, start_day)
+
 rss_url = "https://kingcounty.gov/depts/health/news/rss.aspx"
-t = time.time()
-feed = feedparser.parse(rss_url)
 
-new_cases = []
-total_cases = []
-new_deaths = []
-total_deaths = []
-dates = []
-print("starting to parse King County site https://kingcounty.gov/depts/health/news/rss.aspx")
-t = time.time()
+kcCsvFilename = "data\\kc.csv"
 
-feed['entries'].reverse()
-last_case_total = 0
-last_death_total = 0
-for entry in feed['entries']:
-    date = dateutil.parser.parse(entry['published'])
-    if date.year > 2019 and ((date.month >= start_month and date.day >= start_date) or (date.month > start_month + 1)):
+Record = namedtuple("Record", "new_cases total_cases new_deaths total_deaths")
+
+def main():
+    feed = feedparser.parse(rss_url)
+
+    records = {}
+
+    if not collect_all:
+        records = LoadExistingRecords()
+
+    # Keep track of query objects based on date, so we can 
+    # inspect ones that we failed to extract from
+    date_query = {}
+
+    print("starting to parse King County site https://kingcounty.gov/depts/health/news/rss.aspx")
+    t = time.time()
+
+    last_case_total = 0
+    last_death_total = 0
+    for entry in reversed(feed['entries']):
+        pub_date = dateutil.parser.parse(entry['published'])
+        record_date = pub_date.date()
+
+        if record_date < start_date:
+            continue
+
+        if record_date in records:
+            continue
+
         query = getluisresult.getluisresult(entry['summary'])
+        date_query[record_date] = query
+        
         if show_output:
-            print("{}-{}: {}".format(date.month, date.day, query))
-        if 'new-cases' in query :
-            new_cases.append(int(query['new-cases']))
-            if 'total-cases' in query:
-                total_cases.append(int(query['total-cases']))
-                last_case_total = int(query['total-cases'])
+            print("{}: {}".format(record_date.isofromat(), query))
+
+        if 'new-cases' not in query:
+            continue
+            
+        new_cases = int(query['new-cases'])
+
+        if 'total-cases' in query:
+            total_cases = int(query['total-cases'])
+        else:
+            total_cases = last_case_total + new_cases
+
+        last_case_total = total_cases
+
+        if 'new-deaths' in query:
+            new_deaths = int(query['new-deaths'])
+            
+            if 'total-deaths' in query:
+                total_deaths = int(query['total-deaths'])
             else:
-                new_case_total = last_case_total + int(query['new-cases'])
-                total_cases.append(new_case_total)
-                last_case_total = new_case_total
-            dates.append( str(date.month) + '-' + str(date.day))
-            if 'new-deaths' in query:
-                new_deaths.append(int(query['new-deaths']))
-                if 'total-deaths' in query:
-                    total_deaths.append(int(query['total-deaths']))
-                    last_death_total = int(query['total-deaths'])
-                else:
-                    new_death_total = last_death_total + int(query['new-deaths'])
-                    total_deaths.append(new_death_total)
-                    last_death_total = new_death_total
-            else:
-                new_deaths.append(0)
-                total_deaths.append(last_death_total)
+                total_deaths = last_death_total + new_deaths
+        else:
+            new_deaths = 0
+            total_deaths = last_death_total
 
-print("Seconds elapsed:{}".format(time.time()-t))
+        last_death_total = total_deaths
+        
+        records[record_date] = Record(new_cases, total_cases,
+                                      new_deaths, total_deaths)
 
-# todo: This isn't necessary anymore since we're casting to int above
-# num_new_cases = [int(s) for s in new_cases]
-# num_total_cases = [int(s) for s in total_cases]
+    print("Seconds elapsed:{}".format(time.time()-t))
 
-plt.plot(new_cases, label="new cases")
-plt.plot(total_cases, label="total cases")
-plt.plot(total_deaths, label="total deaths")
+    CheckForParseIssues(records, date_query)
 
-def sum_to_14_days_ago(i, list):
-    s = 0
-    if i > 14:
-        s= sum(list[:i-14])
-    return s
+    KCCsv().WriteCsvData(kcCsvFilename, 
+        {k:recordToCsvDict(v) for k,v in records.items()})
 
-def num_recovered_cases(list):
-    # add up the cases per day (new cases) from beginning until current index
-    num_recovered = [sum_to_14_days_ago(i, list) for i in range(len(list))]
-    return num_recovered
+def CheckForParseIssues(records, date_query):
+    dates = sorted(records.keys())
+    missing = findMissingDates(dates[0], dates[-1], dates)
 
-num_recovered = num_recovered_cases(new_cases)
+    for d in missing:
+      print("Missing {} : {}".format(
+          d.isoformat(), 
+          date_query.get(d, "No query results")))
 
-total_minus_num_recovered = [total_cases[i] - num_recovered[i] for i in range(len(total_cases))]
-total_minus_num_recovered_and_dead = [total_minus_num_recovered[i] - total_deaths[i] for i in range(len(total_cases))]
+def findMissingDates(start, end, dates):
+    dateSet = set(d.toordinal() for d in dates)
+    startOrd = start.toordinal()
+    endOrd = end.toordinal()
+    
+    return [date.fromordinal(ord) for ord in range(startOrd,endOrd+1)
+              if ord not in dateSet]
 
-plt.plot(total_minus_num_recovered, 'g--', label="total minus estimated recovered")
-plt.plot(total_minus_num_recovered_and_dead, 'b--',
-         label="total minus dead and estimated recovered")
-plt.xticks(np.arange(len(total_cases)), dates, rotation=90)
-plt.legend()
-plt.title("King County COVID-19 cases")
+def csvDictToRecord(d):
+    fieldNames = ("NewCases","TotalCases","NewDeaths","TotalDeaths")
+    return Record(*(d[k] for k in fieldNames))
 
+def recordToCsvDict(r):
+    fieldNames = ("NewCases","TotalCases","NewDeaths","TotalDeaths")
+    return dict(zip(fieldNames, r))
 
-# plt.minorticks_on()
+def LoadExistingRecords():
 
-# Customize the major grid
-plt.grid(color='gray', linestyle='-', linewidth=0.3)
-# Customize the minor grid
-# plt.grid(which='minor', linestyle=':', linewidth=0.3, color='red')
+    try:
+      data = (KCCsv().GetCsvData(kcCsvFilename))
+    except:
+      return {}
 
+    return {k:csvDictToRecord(v) for k,v in data.items()}
 
-plt.savefig("covid-cases.png")
-plt.show()
-
-print("New:{}".format(new_cases))
-print("Total: {}".format(total_cases))
-print('Estimated recovered:{}'.format(num_recovered))
-print("total minus recovered: {}".format(total_minus_num_recovered))
-print('total minus recovered and dead: {}'.format(total_minus_num_recovered_and_dead))
-print("Deaths: {}".format(total_deaths))
+if __name__ == "__main__":
+    main()

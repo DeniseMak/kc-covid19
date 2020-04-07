@@ -7,6 +7,8 @@ class NytCsv:
   pass
 class CdcCsv:
   pass
+class KCCsv:
+  pass
 
 # Both the NYT csv and the CDC csv (that we create) have the same
 # format: a date formated as YYYY-MM-DD, followed by feilds
@@ -28,7 +30,15 @@ class DateMapCsv:
     for item in self._getRows(filename):
       pass
     return {} if item is None else {item[0] : item[1]}
-    
+
+  def _writeCsvData(self, filename, rowDicts, fieldnames):
+    with open(filename, "w", newline='') as csvfile:
+      writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+      writer.writeheader()
+      for r in rowDicts:
+        writer.writerow(r)
+      csvfile.close()
+
   def _appendRow(self, filename, rowDict, fieldnames):
     with open(filename, "a", newline='') as csvfile:
       writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -83,7 +93,18 @@ class CdcCsv(DateMapCsv):
   _fieldnames = ["Date", "USCases", "USDeaths"] + sorted(state_to_abbrev.values())
   
   def __init__(self):
-    super().__init__(_fieldnames[0])
+    super().__init__(CdcCsv._fieldnames[0])
 
   def AppendRow(filename, rowDict):
-    DateToIntsMapCsv._appendRow(filename, rowDict, CdcCsv._fieldnames)
+    self._appendRow(filename, rowDict, CdcCsv._fieldnames)
+
+class KCCsv(DateMapCsv):
+  _fieldnames = ["Date", "NewCases", "TotalCases", "NewDeaths", "TotalDeaths"]
+  
+  def __init__(self):
+    super().__init__(KCCsv._fieldnames[0])
+
+  def WriteCsvData(self, filename, data):
+    dates = sorted(data.keys())
+    rowDicts = [dict(data[d], Date=d) for d in dates]
+    self._writeCsvData(filename, rowDicts, KCCsv._fieldnames)
